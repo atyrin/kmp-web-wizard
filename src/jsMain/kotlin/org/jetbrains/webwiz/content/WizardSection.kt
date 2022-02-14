@@ -3,11 +3,13 @@
 package org.jetbrains.webwiz.content
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import org.jetbrains.compose.web.attributes.InputType
 import org.jetbrains.compose.web.css.*
 import org.jetbrains.compose.web.dom.*
+import org.jetbrains.webwiz.SupportedLanguages
 import org.jetbrains.webwiz.generator.ProjectFile
 import org.jetbrains.webwiz.generator.generate
 import org.jetbrains.webwiz.models.KmpLibrary
@@ -16,10 +18,12 @@ import org.jetbrains.webwiz.models.ProjectInfo
 import org.jetbrains.webwiz.models.SingleTargetLibrary
 import org.jetbrains.webwiz.models.Target
 import org.jetbrains.webwiz.setHighlightedCode
+import org.jetbrains.webwiz.setPrism
 import org.jetbrains.webwiz.style.WtContainer
 import org.jetbrains.webwiz.style.WtOffsets
 import org.jetbrains.webwiz.style.WtSections
 import org.jetbrains.webwiz.style.WtTexts
+import org.w3c.dom.HTMLElement
 import kotlin.random.Random
 
 private val defaultProject = ProjectInfo(
@@ -148,73 +152,85 @@ fun WizardSection(callback: (projectInfo: ProjectInfo) -> Unit) = Section({
                 Text("Download new project")
             }
         }
-
-        Div({
-            classes(WtOffsets.wtTopOffset24)
-            style {
-                backgroundColor(rgba(39, 40, 44, 0.05))
-                borderRadius(8.px, 8.px, 8.px)
-                property("font-family", "'JetBrains Mono', monospace")
-                fontSize(10.pt)
-                display(DisplayStyle.Flex)
-                flexDirection(FlexDirection.Row)
-                minHeight(600.pt)
-            }
-        }) {
-            val selectedFilePath = remember { mutableStateOf("build.gradle.kts") }
-
-            val structure = projectInfoState.value.generate()
-            if (structure.none { it.path == selectedFilePath.value }) {
-                selectedFilePath.value = "build.gradle.kts"
-            }
-
-            Div(attrs = {
-                style {
-                    color(rgba(39, 40, 44, .7))
-                    marginTop(5.px)
-                    marginBottom(5.px)
-                }
-            }) {
-                filesStructure(structure, selectedFilePath.value) {
-                    selectedFilePath.value = it.path
-                }
-            }
-            Span(attrs = {
-                style {
-                    width(1.pt)
-                    backgroundColor(Color("gray"))
-                    marginLeft(5.px)
-                    marginRight(5.px)
-                }
-            })
-            Pre(attrs = {
-                style {
-                    color(rgba(39, 40, 44, .7))
-                    lineHeight(29.px)
-                    marginTop(5.px)
-                    marginBottom(5.px)
-                }
-            }) {
-                Code {
-                    val path = selectedFilePath.value
-                    val lang = when {
-                        path.endsWith(".kt") -> "kotlin"
-                        path.endsWith(".kts") -> "gradle"
-                        path.endsWith(".xml") -> "xml"
-                        else -> "text"
-                    }
-                    val content = structure.first { it.path == path }.content
-                    DomSideEffect(content) {
-                        it.setHighlightedCode(content, lang)
-                    }
-                }
-            }
-        }
+        ProjectPreview(projectInfoState)
     }
 }
 
 @Composable
-private fun filesStructure(
+private fun ProjectPreview(projectInfoState: MutableState<ProjectInfo>) =
+    Div({
+        classes(WtOffsets.wtTopOffset24)
+        style {
+            backgroundColor(rgba(39, 40, 44, 0.05))
+            borderRadius(8.px, 8.px, 8.px)
+            property("font-family", "'JetBrains Mono', monospace")
+            fontSize(10.pt)
+            display(DisplayStyle.Flex)
+            flexDirection(FlexDirection.Row)
+            minHeight(600.pt)
+        }
+    }) {
+        val selectedFilePath = remember { mutableStateOf("build.gradle.kts") }
+
+        val structure = projectInfoState.value.generate()
+        if (structure.none { it.path == selectedFilePath.value }) {
+            selectedFilePath.value = "build.gradle.kts"
+        }
+
+        Div(attrs = {
+            style {
+                color(rgba(39, 40, 44, .7))
+                marginTop(5.px)
+                marginBottom(5.px)
+            }
+        }) {
+            FilesStructure(structure, selectedFilePath.value) {
+                selectedFilePath.value = it.path
+            }
+        }
+        Span(attrs = {
+            style {
+                width(1.pt)
+                backgroundColor(Color("gray"))
+                marginLeft(5.px)
+                marginRight(5.px)
+            }
+        })
+        Pre(attrs = {
+            style {
+                color(rgba(39, 40, 44, .7))
+//                    lineHeight(29.px)
+                marginTop(5.px)
+                marginBottom(5.px)
+            }
+        }) {
+            val path = selectedFilePath.value
+            val lang: SupportedLanguages = when {
+                path.endsWith(".kt") -> SupportedLanguages.Kotlin
+                path.endsWith(".kts") -> SupportedLanguages.Kotlin
+                path.endsWith(".xml") -> SupportedLanguages.XML
+                path.endsWith(".properties") -> SupportedLanguages.Properties
+                path.endsWith(".bat") -> SupportedLanguages.Shell
+                path.endsWith(".gitignore") -> SupportedLanguages.Ignore
+                else -> SupportedLanguages.Txt
+            }
+            Code(attrs = {
+                style {
+                    classes("language-${lang.name}")
+                }
+            }) {
+
+                val content = structure.first { it.path == path }.content
+                DomSideEffect(content) {
+                    it.setPrism(content, lang)
+                }
+            }
+        }
+    }
+
+
+@Composable
+private fun FilesStructure(
     list: List<ProjectFile>,
     selectedFilePath: String,
     onClick: (file: ProjectFile) -> Unit
@@ -231,11 +247,11 @@ private fun filesStructure(
 
     val root = mutableMapOf<String, Any?>()
     list.forEach { f -> putFileToDir(f, f.path.split('/'), root) }
-    fileTree(0, root, selectedFilePath, onClick)
+    FileTree(0, root, selectedFilePath, onClick)
 }
 
 @Composable
-private fun fileTree(
+private fun FileTree(
     level: Int,
     map: Map<String, Any?>,
     selectedFilePath: String,
@@ -279,7 +295,7 @@ private fun fileTree(
                             cursor("pointer")
                         }
                     }) { Text(flattenName) }
-                    fileTree(level + 1, dir, selectedFilePath, onClick)
+                    FileTree(level + 1, dir, selectedFilePath, onClick)
                 }
             }
         }
